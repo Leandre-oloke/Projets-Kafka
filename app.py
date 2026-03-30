@@ -1,46 +1,54 @@
 import streamlit as st
-import json
-from kafka import KafkaConsumer
-import os
-
-KAFKA_BROKER_URL = os.environ.get('KAFKA_BROKER_URL', 'localhost:9092')
-LEGIT_TOPIC = 'streaming.transactions.legit'
-FRAUD_TOPIC = 'streaming.transactions.fraud'
+import random
+import string
+import time
 
 st.title("🔍 Kafka Fraud Detector - Dashboard")
 
+def random_id():
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+
+def generate_transaction():
+    return {
+        "source": random_id(),
+        "target": random_id(),
+        "amount": round(random.uniform(10, 1000), 2),
+        "currency": "EUR"
+    }
+
+def is_fraud(tx):
+    return tx["amount"] >= 900
+
+if "transactions" not in st.session_state:
+    st.session_state.transactions = []
+if "legit" not in st.session_state:
+    st.session_state.legit = 0
+if "fraud" not in st.session_state:
+    st.session_state.fraud = 0
+
 col1, col2 = st.columns(2)
-legit_count = col1.empty()
-fraud_count = col2.empty()
+col1.metric("✅ Légitimes", st.session_state.legit)
+col2.metric("🚨 Fraudes", st.session_state.fraud)
 
-st.subheader("📋 Transactions en temps réel")
-table = st.empty()
+if st.button("▶️ Générer 10 transactions"):
+    for _ in range(10):
+        tx = generate_transaction()
+        tx["status"] = "🚨 Fraude" if is_fraud(tx) else "✅ Légit"
+        st.session_state.transactions.insert(0, tx)
+        if is_fraud(tx):
+            st.session_state.fraud += 1
+        else:
+            st.session_state.legit += 1
+    st.rerun()
 
-transactions = []
-legit = 0
-fraud = 0
+if st.button("🔄 Reset"):
+    st.session_state.transactions = []
+    st.session_state.legit = 0
+    st.session_state.fraud = 0
+    st.rerun()
 
-consumer = KafkaConsumer(
-    LEGIT_TOPIC,
-    FRAUD_TOPIC,
-    bootstrap_servers=KAFKA_BROKER_URL,
-    value_deserializer=lambda v: json.loads(v),
-    auto_offset_reset='latest'
-)
-
-for message in consumer:
-    topic = message.topic
-    tx = message.value
-    tx['status'] = '✅ Légit' if topic == LEGIT_TOPIC else '🚨 Fraude'
-
-    if topic == LEGIT_TOPIC:
-        legit += 1
-    else:
-        fraud += 1
-
-    transactions.insert(0, tx)
-    transactions = transactions[:50]  # garder les 50 dernières
-
-    legit_count.metric("✅ Légitimes", legit)
-    fraud_count.metric("🚨 Fraudes", fraud)
-    table.dataframe(transactions)
+if st.session_state.transactions:
+    st.subheader("📋 Transactions en temps réel")
+    st.dataframe(st.session_state.transactions[:50])
+else:
+    st.info("Cliquez sur 'Générer 10 transactions' pour démarrer !")
