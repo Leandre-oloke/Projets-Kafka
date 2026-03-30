@@ -2,6 +2,7 @@ import streamlit as st
 import random
 import string
 import time
+import pandas as pd
 
 st.title("🔍 Kafka Fraud Detector - Dashboard")
 
@@ -25,13 +26,30 @@ if "legit" not in st.session_state:
     st.session_state.legit = 0
 if "fraud" not in st.session_state:
     st.session_state.fraud = 0
+if "running" not in st.session_state:
+    st.session_state.running = False
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 col1.metric("✅ Légitimes", st.session_state.legit)
 col2.metric("🚨 Fraudes", st.session_state.fraud)
+col3.metric("📊 Total", len(st.session_state.transactions))
 
-if st.button("▶️ Générer 10 transactions"):
-    for _ in range(10):
+colA, colB = st.columns(2)
+if colA.button("▶️ Démarrer" if not st.session_state.running else "⏸️ Pause"):
+    st.session_state.running = not st.session_state.running
+
+if colB.button("🔄 Reset"):
+    st.session_state.transactions = []
+    st.session_state.legit = 0
+    st.session_state.fraud = 0
+    st.session_state.running = False
+    st.rerun()
+
+chart_placeholder = st.empty()
+table_placeholder = st.empty()
+
+if st.session_state.running:
+    for _ in range(5):
         tx = generate_transaction()
         tx["status"] = "🚨 Fraude" if is_fraud(tx) else "✅ Légit"
         st.session_state.transactions.insert(0, tx)
@@ -39,16 +57,20 @@ if st.button("▶️ Générer 10 transactions"):
             st.session_state.fraud += 1
         else:
             st.session_state.legit += 1
-    st.rerun()
-
-if st.button("🔄 Reset"):
-    st.session_state.transactions = []
-    st.session_state.legit = 0
-    st.session_state.fraud = 0
-    st.rerun()
 
 if st.session_state.transactions:
-    st.subheader("📋 Transactions en temps réel")
-    st.dataframe(st.session_state.transactions[:50])
-else:
-    st.info("Cliquez sur 'Générer 10 transactions' pour démarrer !")
+    df = pd.DataFrame(st.session_state.transactions)
+
+    st.subheader("📈 Montants en temps réel")
+    chart_data = df[["amount", "status"]].head(50).copy()
+    chart_data["color"] = chart_data["status"].apply(
+        lambda x: 1 if "Fraude" in x else 0
+    )
+    chart_placeholder.line_chart(df["amount"].head(50))
+
+    st.subheader("📋 Transactions")
+    table_placeholder.dataframe(df.head(50))
+
+if st.session_state.running:
+    time.sleep(1)
+    st.rerun()
